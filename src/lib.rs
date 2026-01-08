@@ -4,6 +4,8 @@ pub mod iso3166_2;
 pub mod iso3166_3;
 #[cfg(all(direct_wasm, target_arch = "wasm32"))]
 use js_sys::Array;
+use serde::Deserialize;
+use serde::Serialize;
 use std::hash::Hash;
 #[cfg(all(direct_wasm, target_arch = "wasm32"))]
 use wasm_bindgen::prelude::*;
@@ -59,6 +61,42 @@ pub struct CountryCode {
     pub alpha3: &'static str,
     ///Numeric code
     pub numeric: i32,
+}
+
+impl<'de> Deserialize<'de> for CountryCode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        if let Ok(s) = String::deserialize(deserializer) {
+            if let Some(a1) = from_alpha2(&s) {
+                return Ok(a1);
+            }
+            if let Some(a2) = from_alpha3(&s) {
+                return Ok(a2);
+            }
+            if let Some(num) = from_numeric_str(&s) {
+                return Ok(num);
+            }
+        }
+        // only need alpha2 anyways, everything else is unnecessary...
+
+        // if let Ok(i) = i32::deserialize(deserializer) {
+        //     if let Some(num) = from_numeric(i) {
+        //         return Ok(num);
+        //     }
+        // }
+        Err(serde::de::Error::custom("value matches no CountyCode"))
+    }
+}
+
+impl Serialize for CountryCode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.alpha2)
+    }
 }
 
 #[cfg_attr(all(direct_wasm, target_arch = "wasm32"), wasm_bindgen)]
@@ -3028,6 +3066,8 @@ pub const ALL: &[CountryCode] = &[
 
 #[cfg(test)]
 mod tests {
+    use serde::Serialize;
+
     use super::*;
 
     #[test]
@@ -3035,5 +3075,21 @@ mod tests {
         let country = crate::from_alpha2("UK");
 
         assert_eq!(country, Some(GB));
+    }
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    struct Test {
+        data: CountryCode,
+    }
+
+    #[test]
+    fn serde_test() {
+        let test = Test { data: DE };
+
+        let json = serde_json::json!({"data": "DE"}).to_string();
+
+        assert_eq!(serde_json::to_string(&test).expect("is valid"), json);
+
+        assert_eq!(serde_json::from_str::<Test>(&json).expect("is valid"), test);
     }
 }
